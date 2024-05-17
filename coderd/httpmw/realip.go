@@ -14,6 +14,8 @@ import (
 const (
 	headerXForwardedFor   string = "X-Forwarded-For"
 	headerXForwardedProto string = "X-Forwarded-Proto"
+	headerSSLClientDn     string = "X-SSL-Client-DN"
+	headerSSLIssuerDn     string = "X-SSL-Issuer-DN"
 )
 
 // RealIPConfig configures the search order for the function, which controls
@@ -27,6 +29,7 @@ type RealIPConfig struct {
 	// TrustedHeaders lists headers that are trusted for forwarding
 	// IP addresses. e.g. "CF-Connecting-IP", "True-Client-IP", etc.
 	TrustedHeaders []string
+	clientAuth     string
 }
 
 // ExtractRealIP is a middleware that uses headers from reverse proxies to
@@ -156,6 +159,28 @@ func EnsureXForwardedForHeader(req *http.Request) error {
 	return nil
 }
 
+// EnsureClientTLSHeaders ensures that the request has the appropriate proxied mTLS headers (if configured)
+// NOTE: If a client certificate is not present, we need to clear the configured headers as proxied applications
+// depend on the proxy to handle authentication
+func EnsureClientTLSHeaders(config *RealIPConfig, req *http.Request) error {
+	if config.clientAuth == "require-and-verify" {
+		certificates := req.TLS.PeerCertificates
+		if len(certificates) > 0 {
+			// The first certificate is *typically* the client cert
+			// Multiple certificates may appear here if the client presented their entire CA chain/etc.
+			certificate := certificates[0]
+			req.Header.Set(headerSSLClientDn, certificate.Subject.String())
+			req.Header.Set(headerSSLIssuerDn, certificate.Issuer.String())
+		} else {
+			// Otherwise clear the headers (prevents using them to impersonate other users)
+			req.Header.Del(headerSSLClientDn)
+			req.Header.Del(headerSSLIssuerDn)
+		}
+	}
+
+	return nil
+}
+
 // getRemoteAddress extracts the IP address from the given string. If
 // the string contains commas, it assumes that the first part is the
 // original address.
@@ -211,9 +236,9 @@ func RealIP(ctx context.Context) *RealIPState {
 	return state
 }
 
-// ParseRealIPConfig takes a raw string array of headers and origins
+// ParseRealIPConfig takes a raw string array of headers, a raw string array of origins and the client auth setting
 // to produce a config.
-func ParseRealIPConfig(headers, origins []string) (*RealIPConfig, error) {
+func ParseRealIPConfig(headers, origins []string, clientAuth string) (*RealIPConfig, error) {
 	config := &RealIPConfig{
 		TrustedOrigins: []*net.IPNet{},
 		TrustedHeaders: []string{},
@@ -229,6 +254,7 @@ func ParseRealIPConfig(headers, origins []string) (*RealIPConfig, error) {
 		headers[index] = http.CanonicalHeaderKey(header)
 	}
 	config.TrustedHeaders = headers
+	config.clientAuth = clientAuth
 
 	return config, nil
 }

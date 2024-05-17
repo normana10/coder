@@ -488,6 +488,11 @@ func (s *Server) proxyWorkspaceApp(rw http.ResponseWriter, r *http.Request, appT
 		httpapi.InternalServerError(rw, err)
 		return
 	}
+	err = httpmw.EnsureClientTLSHeaders(s.RealIPConfig, r)
+	if err != nil {
+		httpapi.InternalServerError(rw, err)
+		return
+	}
 
 	appURL, err := url.Parse(appToken.AppURL)
 	if err != nil {
