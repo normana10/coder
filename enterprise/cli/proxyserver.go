@@ -214,7 +214,7 @@ func (r *RootCmd) proxyServer() *serpent.Command {
 				}
 			}
 
-			realIPConfig, err := httpmw.ParseRealIPConfig(cfg.ProxyTrustedHeaders, cfg.ProxyTrustedOrigins)
+			realIPConfig, err := httpmw.ParseRealIPConfig(cfg.ProxyTrustedHeaders, cfg.ProxyTrustedOrigins, cfg.TLS.ClientAuth.Value())
 			if err != nil {
 				return xerrors.Errorf("parse real ip config: %w", err)
 			}
